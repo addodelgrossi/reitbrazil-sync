@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Vet
+        run: go vet ./...
+      - name: Test (unit + contract)
+        run: go test -race ./...
+      - name: Build
+        run: go build ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+      - name: Terraform fmt
+        working-directory: deploy/terraform
+        run: terraform fmt -check -recursive
+      - name: Terraform init (no backend)
+        working-directory: deploy/terraform
+        run: terraform init -backend=false -input=false
+      - name: Terraform validate
+        working-directory: deploy/terraform
+        run: terraform validate

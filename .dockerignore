@@ -1,0 +1,14 @@
+.git
+.github
+bin/
+out/
+dist/
+*.db
+*.db-journal
+docs/
+deploy/terraform/
+.env
+.env.local
+*.tfstate
+*.tfstate.*
+**/.terraform/

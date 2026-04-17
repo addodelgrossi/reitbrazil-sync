@@ -1,0 +1,39 @@
+{
+  "indexes": [],
+  "stocks": [
+    {
+      "stock": "XPLG11",
+      "name": "XP LOG",
+      "longName": "XP Log Fundo de Investimento Imobiliário",
+      "sector": "Fundos de Investimento Imobiliário - Logística",
+      "type": "fund",
+      "close": 99.5,
+      "volume": 3200000
+    },
+    {
+      "stock": "HGLG11",
+      "name": "CSHG LOG",
+      "longName": "CSHG Logística Fundo de Investimento Imobiliário",
+      "sector": "Fundos de Investimento Imobiliário - Logística",
+      "type": "fund",
+      "close": 155.3,
+      "volume": 5400000
+    },
+    {
+      "stock": "KNCR11",
+      "name": "KINEA RENDA",
+      "longName": "Kinea Rendimentos Imobiliários FII",
+      "sector": "Fundos de Investimento Imobiliário - Papel/CRI",
+      "type": "fund",
+      "close": 103.7,
+      "volume": 2100000
+    }
+  ],
+  "availableSectors": ["FII"],
+  "availableStockTypes": ["fund"],
+  "currentPage": 1,
+  "totalPages": 2,
+  "itemsPerPage": 100,
+  "totalCount": 4,
+  "hasNextPage": true
+}

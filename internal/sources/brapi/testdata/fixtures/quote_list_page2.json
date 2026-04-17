@@ -1,0 +1,18 @@
+{
+  "stocks": [
+    {
+      "stock": "KNRI11",
+      "name": "KINEA RENDA I",
+      "longName": "Kinea Renda Imobiliária FII",
+      "sector": "Fundos de Investimento Imobiliário - Híbrido",
+      "type": "fund",
+      "close": 130.2,
+      "volume": 1900000
+    }
+  ],
+  "currentPage": 2,
+  "totalPages": 2,
+  "itemsPerPage": 100,
+  "totalCount": 4,
+  "hasNextPage": false
+}

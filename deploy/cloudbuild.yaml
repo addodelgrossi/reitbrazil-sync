@@ -1,0 +1,44 @@
+# Cloud Build config for reitbrazilctl.
+# Usage (ad-hoc):
+#   gcloud builds submit --config=deploy/cloudbuild.yaml
+# Usage (trigger): wire this file to a GitHub trigger in Cloud Build.
+
+substitutions:
+  _REGION: southamerica-east1
+  _REPO: reitbrazilctl
+  _IMAGE: reitbrazilctl
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deploy/Dockerfile
+      - --build-arg
+      - VERSION=$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest
+      - .
+
+  - id: push-sha
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+
+  - id: push-latest
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,28 @@
+name: Integration
+
+# Runs the //go:build integration test suite. Gated behind a PR label
+# because it expects a live GCP project + credentials configured via
+# repository secrets.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+jobs:
+  integration:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-integration')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+      - run: go test -race -tags=integration ./...
+        env:
+          INGEST_BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
+          INGEST_GCP_PROJECT: ${{ secrets.GCP_PROJECT_IT }}

@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "symbol": "XPLG11",
+      "shortName": "XP LOG",
+      "longName": "XP Log FII",
+      "currency": "BRL",
+      "regularMarketPrice": 102.5,
+      "historicalDataPrice": [
+        {"date": 1767225600, "open": 100.0, "high": 101.0, "low": 99.5, "close": 100.8, "volume": 1200000, "adjustedClose": 100.8},
+        {"date": 1767312000, "open": 100.9, "high": 102.0, "low": 100.5, "close": 101.6, "volume": 1400000, "adjustedClose": 101.6},
+        {"date": 1767398400, "open": 101.7, "high": 103.0, "low": 101.5, "close": 102.5, "volume": 1300000, "adjustedClose": 102.5}
+      ]
+    }
+  ]
+}

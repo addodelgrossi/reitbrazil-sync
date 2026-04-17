@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "symbol": "XPLG11",
+      "shortName": "XP LOG",
+      "defaultKeyStatistics": {
+        "bookValue": 98.5,
+        "priceToBook": 1.04,
+        "sharesOutstanding": 50000000,
+        "lastDividendValue": 0.75,
+        "lastDividendDate": 1767225600
+      },
+      "financialData": {
+        "totalAssets": 5000000000,
+        "currentPrice": 102.5
+      }
+    }
+  ]
+}
