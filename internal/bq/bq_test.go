@@ -49,6 +49,27 @@ func TestRawSchemas_CoversEveryRawTable(t *testing.T) {
 	}
 }
 
+func TestSnapshotSQL_ContainsDistributionMetrics(t *testing.T) {
+	body, err := fs.ReadFile(embeddedFS, "20_materialize_snapshots.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, token := range []string{
+		"avg_daily_traded_value_90d_brl",
+		"dy_12m",
+		"dy_6m",
+		"dy_3m_annualized",
+		"last_distribution_amount",
+		"distribution_stddev_12m",
+		"discount_to_nav",
+	} {
+		if !strings.Contains(sql, token) {
+			t.Fatalf("snapshot SQL missing %s", token)
+		}
+	}
+}
+
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return s[:i]

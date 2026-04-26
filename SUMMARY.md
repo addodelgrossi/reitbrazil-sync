@@ -70,9 +70,6 @@ Ordered by commit (each left the tree build-able):
 
 ## What's deferred (explicit out-of-scope, as the prompt instructed)
 
-- **B3 COTAHIST parser** — skeleton intentionally not created; left as
-  a `// TODO(v1.1)` noted in `docs/sources.md`. Adding it is a drop-in
-  under `internal/sources/b3`.
 - **Cloud Monitoring alerts** — documented in `docs/deploy.md` as the
   next step. The pipeline already writes run reports to
   `gs://reitbrazil-db/runs/`, so a log-based alert is a single

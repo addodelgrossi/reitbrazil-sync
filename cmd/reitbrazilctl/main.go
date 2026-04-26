@@ -19,12 +19,13 @@ var version = "dev"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
 	ctx, _ = logging.WithRunID(ctx)
 
 	app := cli.NewApp(version)
 	if err := fang.Execute(ctx, app.Root()); err != nil {
 		fmt.Fprintf(os.Stderr, "reitbrazilctl: %v\n", err)
+		cancel()
 		os.Exit(1)
 	}
+	cancel()
 }

@@ -29,13 +29,17 @@ func newFetchCmd(app *App) *cobra.Command {
 func resolveTickers(cmd *cobra.Command, raw string, d pipeline.Deps) ([]model.Ticker, error) {
 	parts := parseTickerList(raw)
 	if len(parts) == 0 {
-		tickers, stats, err := pipeline.BuildFIIUniverse(cmd.Context(), d, 0)
+		funds, stats, err := pipeline.BuildFIIUniverse(cmd.Context(), d, 0)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(),
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 			"universe: %d FIIs (brapi %d ∩ CVM %d B3-listed; dropped %d brapi tickers as non-FII)\n",
 			stats.Intersection, stats.BrapiCount, stats.CVMB3WithTicker, stats.BrapiDropped)
+		tickers := make([]model.Ticker, 0, len(funds))
+		for _, f := range funds {
+			tickers = append(tickers, f.Ticker)
+		}
 		return tickers, nil
 	}
 	tickers := make([]model.Ticker, 0, len(parts))
@@ -91,7 +95,7 @@ func newFetchPricesCmd(app *App) *cobra.Command {
 					landErrs = append(landErrs, fmt.Errorf("%s: %w", t, stats.Err()))
 				}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "inserted %d price rows across %d tickers\n", totalRows, len(tickers))
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "inserted %d price rows across %d tickers\n", totalRows, len(tickers))
 			return errors.Join(landErrs...)
 		},
 	}
@@ -127,7 +131,7 @@ func newFetchDividendsCmd(app *App) *cobra.Command {
 					errs = append(errs, fmt.Errorf("%s: %w", t, err))
 				}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "inserted %d dividend rows\n", total)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "inserted %d dividend rows\n", total)
 			return errors.Join(errs...)
 		},
 	}
@@ -166,7 +170,7 @@ func newFetchFundamentalsCmd(app *App) *cobra.Command {
 					errs = append(errs, fmt.Errorf("%s: %w", t, err))
 				}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "inserted %d fundamentals rows\n", total)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "inserted %d fundamentals rows\n", total)
 			return errors.Join(errs...)
 		},
 	}
@@ -203,7 +207,7 @@ func newFetchCVMCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "inserted %d CVM rows for %d\n", stats.RowsInserted, month.Year())
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "inserted %d CVM rows for %d\n", stats.RowsInserted, month.Year())
 			return stats.Err()
 		},
 	}

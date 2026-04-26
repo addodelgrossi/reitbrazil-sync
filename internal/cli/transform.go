@@ -29,7 +29,7 @@ func newTransformCmd(app *App) *cobra.Command {
 			prefixes := stagePrefix(stage)
 			results, err := d.BQ.RunTransforms(ctx, prefixes...)
 			for _, r := range results {
-				fmt.Fprintf(cmd.OutOrStdout(), "ok  %s (%d bytes)\n", r.Name, r.BytesProcessed)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ok  %s (%d bytes)\n", r.Name, r.BytesProcessed)
 			}
 			return err
 		},

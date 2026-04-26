@@ -19,7 +19,6 @@ import (
 	"github.com/addodelgrossi/reitbrazil-sync/internal/logging"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/model"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/publish"
-	"github.com/addodelgrossi/reitbrazil-sync/internal/sources/brapi"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/sources/cvm"
 )
 
@@ -50,10 +49,29 @@ type RunReport struct {
 type Deps struct {
 	Cfg   *config.Config
 	Log   *slog.Logger
-	Brapi *brapi.Client
+	Brapi BrapiSource
 	BQ    *bq.Client
-	CVM   *cvm.Downloader
-	GCS   *publish.GCSPublisher
+	CVM   CVMDownloader
+	GCS   Publisher
+}
+
+// BrapiSource is the source-side contract used by the pipeline.
+type BrapiSource interface {
+	FetchList(context.Context) iter.Seq2[model.Fund, error]
+	FetchHistory(context.Context, model.Ticker, time.Time, time.Time) iter.Seq2[model.PriceBar, error]
+	FetchDividends(context.Context, model.Ticker) iter.Seq2[model.Dividend, error]
+	FetchFundamentals(context.Context, model.Ticker) (model.Fundamentals, error)
+}
+
+// CVMDownloader is the minimal CVM download contract used by the pipeline.
+type CVMDownloader interface {
+	FetchYear(context.Context, int) ([]byte, error)
+}
+
+// Publisher is the publish-side contract used by the pipeline.
+type Publisher interface {
+	PublishSQLite(context.Context, string, publish.Metadata) error
+	PublishRunReport(context.Context, []byte, string) error
 }
 
 // DailyOptions tweaks the daily run.
@@ -61,8 +79,10 @@ type DailyOptions struct {
 	Tickers []model.Ticker // if empty, fetch the whole universe via brapi list
 	From    time.Time      // price window start; zero = last 2 years
 	To      time.Time
-	OutDir  string         // where to write the generated SQLite (default ./out)
+	OutDir  string // where to write the generated SQLite (default ./out)
 	DryRun  bool
+
+	skipBootstrap bool
 }
 
 // RunDaily executes fetch → land → transform → export → publish.
@@ -71,7 +91,7 @@ type DailyOptions struct {
 // canon (MERGE statements) and recreates the SQLite file from scratch.
 func RunDaily(ctx context.Context, d Deps, opts DailyOptions) (*RunReport, error) {
 	runID := logging.RunIDFromContext(ctx)
-	log := logging.AttachRunID(d.Log, runID).With("mode", "daily")
+	log := logging.AttachRunID(loggerOrDefault(d.Log), runID).With("mode", "daily")
 	start := time.Now().UTC()
 	report := &RunReport{RunID: runID, Mode: "daily", StartedAt: start}
 
@@ -79,11 +99,20 @@ func RunDaily(ctx context.Context, d Deps, opts DailyOptions) (*RunReport, error
 	if outDir == "" {
 		outDir = "./out"
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
 		return report, fmt.Errorf("mkdir outDir: %w", err)
 	}
 
 	tickers := opts.Tickers
+
+	if !opts.DryRun && !opts.skipBootstrap {
+		bres := stageBootstrap(ctx, d)
+		report.Stages = append(report.Stages, bres)
+		if err := hasError(bres); err != nil {
+			finalize(report, start)
+			return report, err
+		}
+	}
 
 	// Stage 1a: discover (if tickers are unset)
 	if len(tickers) == 0 {
@@ -92,7 +121,7 @@ func RunDaily(ctx context.Context, d Deps, opts DailyOptions) (*RunReport, error
 		if err != nil {
 			return report, err
 		}
-		tickers = list
+		tickers = tickersFromFunds(list)
 	}
 	log.InfoContext(ctx, "universe resolved", "tickers", len(tickers))
 
@@ -142,6 +171,23 @@ func RunDaily(ctx context.Context, d Deps, opts DailyOptions) (*RunReport, error
 		return report, fmt.Errorf("quality gate: fund_count=%d < min=%d", counts.Funds, d.Cfg.MinFundCount)
 	}
 	report.FundCount = counts.Funds
+
+	priceMax, err := latestPriceDate(ctx, d.BQ, d.BQ.Project(), d.BQ.DatasetCanon())
+	if err != nil {
+		report.QualityPassed = false
+		finalize(report, start)
+		return report, fmt.Errorf("quality gate: latest price date: %w", err)
+	}
+	report.PriceMaxDate = priceMax.Format("2006-01-02")
+	if d.Cfg.MaxPriceLagDays > 0 {
+		lagDays := int(time.Since(priceMax).Hours() / 24)
+		if lagDays > d.Cfg.MaxPriceLagDays {
+			report.QualityPassed = false
+			finalize(report, start)
+			return report, fmt.Errorf("quality gate: price_max_date=%s lag=%dd > max=%dd",
+				report.PriceMaxDate, lagDays, d.Cfg.MaxPriceLagDays)
+		}
+	}
 	report.QualityPassed = true
 
 	// Stage 7: publish
@@ -159,6 +205,13 @@ func RunDaily(ctx context.Context, d Deps, opts DailyOptions) (*RunReport, error
 	return report, nil
 }
 
+func loggerOrDefault(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
+
 // RunMonthly extends the daily run with a CVM ingest for the previous
 // month. It expects the caller to have configured a *cvm.Downloader on
 // Deps.
@@ -172,26 +225,67 @@ func RunMonthly(ctx context.Context, d Deps, opts MonthlyOptions) (*RunReport, e
 	if opts.Month.IsZero() {
 		opts.Month = time.Now().UTC().AddDate(0, -1, 0)
 	}
+	var bootstrapRes *StageResult
+	if !opts.DryRun {
+		res := stageBootstrap(ctx, d)
+		bootstrapRes = &res
+		if err := hasError(res); err != nil {
+			start := time.Now().UTC()
+			rep := &RunReport{RunID: logging.RunIDFromContext(ctx), Mode: "monthly", StartedAt: start, Stages: []StageResult{res}}
+			finalize(rep, start)
+			return rep, err
+		}
+		opts.skipBootstrap = true
+	}
 	// Land CVM first so the funds transform can join CNPJ.
-	cvmRes := stageLandCVM(ctx, d, opts.Month)
+	cvmRes := stageLandCVM(ctx, d, opts.Month, opts.DryRun)
+	if err := hasError(cvmRes); err != nil {
+		start := time.Now().UTC()
+		rep := &RunReport{RunID: logging.RunIDFromContext(ctx), Mode: "monthly", StartedAt: start, Stages: []StageResult{cvmRes}}
+		finalize(rep, start)
+		return rep, err
+	}
 	rep, err := RunDaily(ctx, d, opts.DailyOptions)
 	if rep == nil {
 		rep = &RunReport{}
 	}
-	// Insert the CVM stage at the front for readability.
-	rep.Stages = append([]StageResult{cvmRes}, rep.Stages...)
+	prefix := []StageResult{}
+	if bootstrapRes != nil {
+		prefix = append(prefix, *bootstrapRes)
+	}
+	prefix = append(prefix, cvmRes)
+	rep.Stages = append(prefix, rep.Stages...)
 	rep.Mode = "monthly"
 	return rep, err
 }
 
 // -- stage implementations --
 
-func stageDiscover(ctx context.Context, d Deps, dryRun bool) (StageResult, []model.Ticker, error) {
+func stageBootstrap(ctx context.Context, d Deps) StageResult {
+	start := time.Now()
+	stage := "bootstrap"
+	var errs []string
+	if d.BQ == nil {
+		errs = append(errs, "bq client not configured")
+		return buildStage(stage, 0, start, errs)
+	}
+	if err := d.BQ.Bootstrap(ctx); err != nil {
+		errs = append(errs, err.Error())
+		return buildStage(stage, 0, start, errs)
+	}
+	results, err := d.BQ.RunDDL(ctx)
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+	return buildStage(stage, len(results), start, errs)
+}
+
+func stageDiscover(ctx context.Context, d Deps, dryRun bool) (StageResult, []model.Fund, error) {
 	start := time.Now()
 	stage := "discover"
 	var errs []string
 
-	tickers, stats, err := BuildFIIUniverse(ctx, d, 0)
+	funds, stats, err := BuildFIIUniverse(ctx, d, 0)
 	if err != nil {
 		errs = append(errs, err.Error())
 		return buildStage(stage, 0, start, errs), nil, err
@@ -204,15 +298,14 @@ func stageDiscover(ctx context.Context, d Deps, dryRun bool) (StageResult, []mod
 			"brapi_dropped_as_non_fii", stats.BrapiDropped)
 	}
 
-	if !dryRun && d.BQ != nil && len(tickers) > 0 {
-		// Re-land as a stream so the raw fund list keeps a fresh snapshot.
-		landStats, err := d.BQ.LandFunds(ctx, fundsIterFor(tickers))
+	if !dryRun && d.BQ != nil && len(funds) > 0 {
+		landStats, err := d.BQ.LandFunds(ctx, fundsIterFor(funds))
 		_ = landStats
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
 	}
-	return buildStage(stage, len(tickers), start, errs), tickers, firstErr(errs)
+	return buildStage(stage, len(funds), start, errs), funds, firstErr(errs)
 }
 
 func stageLandPrices(ctx context.Context, d Deps, tickers []model.Ticker, from, to time.Time) StageResult {
@@ -273,7 +366,7 @@ func stageLandFundamentals(ctx context.Context, d Deps, tickers []model.Ticker) 
 	return buildStage(stage, rows, start, errs)
 }
 
-func stageLandCVM(ctx context.Context, d Deps, month time.Time) StageResult {
+func stageLandCVM(ctx context.Context, d Deps, month time.Time, dryRun bool) StageResult {
 	start := time.Now()
 	stage := "land_cvm"
 	year := month.Year()
@@ -282,12 +375,15 @@ func stageLandCVM(ctx context.Context, d Deps, month time.Time) StageResult {
 	if d.CVM == nil {
 		return buildStage(stage, 0, start, []string{"cvm downloader not configured"})
 	}
+	if dryRun {
+		return buildStage(stage, 0, start, nil)
+	}
 	zipBytes, err := d.CVM.FetchYear(ctx, year)
 	if err != nil {
 		errs = append(errs, err.Error())
 		return buildStage(stage, rows, start, errs)
 	}
-	stats, err := d.BQ.LandCVMInforme(ctx, cvm.Parse(ctx, zipBytes))
+	stats, err := d.BQ.LandCVMInforme(ctx, filterCVMMonth(cvm.Parse(ctx, zipBytes), month))
 	rows += stats.RowsInserted
 	if err != nil {
 		errs = append(errs, err.Error())
@@ -320,7 +416,7 @@ func stageExport(ctx context.Context, d Deps, dbPath string) (export.RowCounts, 
 	if err != nil {
 		return export.RowCounts{}, buildStage(stage, 0, start, []string{err.Error()})
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w := export.NewWriter(db, export.WriterOptions{BatchSize: 1000, Logger: d.Log})
 	project := d.BQ.Project()
@@ -412,14 +508,39 @@ func firstErr(errs []string) error {
 	return errors.New(errs[0])
 }
 
-// fundsIterFor converts a slice of tickers into a model.Fund iterator;
-// used when re-landing the discovered fund list without extra metadata.
-func fundsIterFor(tickers []model.Ticker) iter.Seq2[model.Fund, error] {
-	ingested := time.Now().UTC()
+func tickersFromFunds(funds []model.Fund) []model.Ticker {
+	out := make([]model.Ticker, 0, len(funds))
+	for _, f := range funds {
+		out = append(out, f.Ticker)
+	}
+	return out
+}
+
+func fundsIterFor(funds []model.Fund) iter.Seq2[model.Fund, error] {
 	return func(yield func(model.Fund, error) bool) {
-		for _, t := range tickers {
-			if !yield(model.Fund{Ticker: t, Name: string(t), IngestedAt: ingested, Listed: true}, nil) {
+		for _, f := range funds {
+			if !yield(f, nil) {
 				return
+			}
+		}
+	}
+}
+
+func filterCVMMonth(src iter.Seq2[model.CVMInformeMensal, error], month time.Time) iter.Seq2[model.CVMInformeMensal, error] {
+	targetYear, targetMonth, _ := month.Date()
+	return func(yield func(model.CVMInformeMensal, error) bool) {
+		for rec, err := range src {
+			if err != nil {
+				if !yield(model.CVMInformeMensal{}, err) {
+					return
+				}
+				continue
+			}
+			y, m, _ := rec.ReferenceMonth.Date()
+			if y == targetYear && m == targetMonth {
+				if !yield(rec, nil) {
+					return
+				}
 			}
 		}
 	}
@@ -476,18 +597,36 @@ type bqFundamentalsRow struct {
 }
 
 type bqSnapshotRow struct {
-	Ticker              string      `bigquery:"ticker"`
-	LastClose           *float64    `bigquery:"last_close"`
-	LastCloseDate       *civil.Date `bigquery:"last_close_date"`
-	DYTrailing12m       *float64    `bigquery:"dy_trailing_12m"`
-	DYForwardEst        *float64    `bigquery:"dy_forward_est"`
-	AvgDailyVolume90d   *float64    `bigquery:"avg_daily_volume_90d"`
-	Volatility90d       *float64    `bigquery:"volatility_90d"`
-	MaxDrawdown1y       *float64    `bigquery:"max_drawdown_1y"`
-	PVP                 *float64    `bigquery:"pvp"`
-	Segment             *string     `bigquery:"segment"`
-	Mandate             *string     `bigquery:"mandate"`
-	UpdatedAt           time.Time   `bigquery:"updated_at"`
+	Ticker            string      `bigquery:"ticker"`
+	LastClose         *float64    `bigquery:"last_close"`
+	LastCloseDate     *civil.Date `bigquery:"last_close_date"`
+	DYTrailing12m     *float64    `bigquery:"dy_trailing_12m"`
+	DYForwardEst      *float64    `bigquery:"dy_forward_est"`
+	AvgDailyVolume90d *float64    `bigquery:"avg_daily_volume_90d"`
+	Volatility90d     *float64    `bigquery:"volatility_90d"`
+	MaxDrawdown1y     *float64    `bigquery:"max_drawdown_1y"`
+	PVP               *float64    `bigquery:"pvp"`
+	Segment           *string     `bigquery:"segment"`
+	Mandate           *string     `bigquery:"mandate"`
+	UpdatedAt         time.Time   `bigquery:"updated_at"`
+}
+
+type bqMaxDateRow struct {
+	MaxDate *civil.Date `bigquery:"max_date"`
+}
+
+func latestPriceDate(ctx context.Context, c *bq.Client, project, dataset string) (time.Time, error) {
+	sql := fmt.Sprintf(`SELECT MAX(trade_date) AS max_date FROM `+"`%s.%s.prices`", project, dataset)
+	for row, err := range bq.Read[bqMaxDateRow](ctx, c, sql) {
+		if err != nil {
+			return time.Time{}, err
+		}
+		if row.MaxDate == nil {
+			return time.Time{}, errors.New("no price rows")
+		}
+		return row.MaxDate.In(time.UTC), nil
+	}
+	return time.Time{}, errors.New("no price rows")
 }
 
 func ReadFunds(ctx context.Context, c *bq.Client, project, dataset string) iter.Seq2[export.FundRow, error] {
@@ -540,9 +679,18 @@ func ReadPrices(ctx context.Context, c *bq.Client, project, dataset string) iter
 }
 
 func ReadDividends(ctx context.Context, c *bq.Client, project, dataset string) iter.Seq2[export.DividendRow, error] {
-	sql := fmt.Sprintf(`SELECT ticker, announce_date, ex_date, record_date, payment_date,
-	                            amount_per_share, kind, source
-	                     FROM `+"`%s.%s.dividends`"+` ORDER BY ticker ASC, ex_date ASC, kind ASC`, project, dataset)
+	sql := fmt.Sprintf(`SELECT
+	                            ticker,
+	                            MIN(announce_date) AS announce_date,
+	                            ex_date,
+	                            MIN(record_date) AS record_date,
+	                            MIN(payment_date) AS payment_date,
+	                            SUM(amount_per_share) AS amount_per_share,
+	                            kind,
+	                            ANY_VALUE(source) AS source
+	                     FROM `+"`%s.%s.dividends`"+`
+	                     GROUP BY ticker, ex_date, kind
+	                     ORDER BY ticker ASC, ex_date ASC, kind ASC`, project, dataset)
 	src := bq.Read[bqDividendRow](ctx, c, sql)
 	return func(yield func(export.DividendRow, error) bool) {
 		for row, err := range src {

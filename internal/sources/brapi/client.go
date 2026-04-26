@@ -27,9 +27,9 @@ var DefaultUserAgent = fmt.Sprintf("reitbrazil-sync/%s (%s)", version(), runtime
 type ClientOptions struct {
 	BaseURL    string
 	Token      string
-	RPS        float64        // rate limit; 0 falls back to 3.
-	Timeout    time.Duration  // per-request; 0 falls back to 30s.
-	MaxRetries int            // 4xx/5xx retries; 0 falls back to 3.
+	RPS        float64       // rate limit; 0 falls back to 3.
+	Timeout    time.Duration // per-request; 0 falls back to 30s.
+	MaxRetries int           // 4xx/5xx retries; 0 falls back to 3.
 	UserAgent  string
 	HTTPClient *http.Client
 	Logger     *slog.Logger
@@ -123,9 +123,17 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		closeErr := resp.Body.Close()
 		if err != nil {
 			lastErr = fmt.Errorf("read body: %w", err)
+			if attempt == c.maxRetries {
+				return lastErr
+			}
+			sleep(ctx, backoff(attempt))
+			continue
+		}
+		if closeErr != nil {
+			lastErr = fmt.Errorf("close body: %w", closeErr)
 			if attempt == c.maxRetries {
 				return lastErr
 			}

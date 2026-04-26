@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS `${project}.${dataset_canon}.funds` (
   ticker        STRING NOT NULL,
   cnpj          STRING,
+  isin          STRING,
   name          STRING NOT NULL,
   segment       STRING,
   mandate       STRING,
@@ -13,6 +14,8 @@ CREATE TABLE IF NOT EXISTS `${project}.${dataset_canon}.funds` (
   listed        BOOL NOT NULL
 )
 CLUSTER BY segment, mandate, ticker;
+
+ALTER TABLE `${project}.${dataset_canon}.funds` ADD COLUMN IF NOT EXISTS isin STRING;
 
 CREATE TABLE IF NOT EXISTS `${project}.${dataset_canon}.prices` (
   ticker     STRING NOT NULL,
@@ -27,6 +30,7 @@ PARTITION BY trade_date
 CLUSTER BY ticker;
 
 CREATE TABLE IF NOT EXISTS `${project}.${dataset_canon}.dividends` (
+  event_id         STRING NOT NULL,
   ticker           STRING NOT NULL,
   announce_date    DATE,
   ex_date          DATE NOT NULL,
@@ -38,6 +42,8 @@ CREATE TABLE IF NOT EXISTS `${project}.${dataset_canon}.dividends` (
 )
 PARTITION BY ex_date
 CLUSTER BY ticker;
+
+ALTER TABLE `${project}.${dataset_canon}.dividends` ADD COLUMN IF NOT EXISTS event_id STRING;
 
 CREATE TABLE IF NOT EXISTS `${project}.${dataset_canon}.fundamentals` (
   ticker             STRING NOT NULL,
@@ -62,9 +68,20 @@ CREATE TABLE IF NOT EXISTS `${project}.${dataset_canon}.fund_snapshots` (
   dy_trailing_12m      FLOAT64,
   dy_forward_est       FLOAT64,
   avg_daily_volume_90d FLOAT64,
+  avg_daily_traded_value_90d_brl FLOAT64,
   volatility_90d       FLOAT64,
   max_drawdown_1y      FLOAT64,
   pvp                  FLOAT64,
+  dy_12m               FLOAT64,
+  dy_6m                FLOAT64,
+  dy_3m_annualized     FLOAT64,
+  last_distribution_amount FLOAT64,
+  last_distribution_date   DATE,
+  months_paid_12m      INT64,
+  distribution_stddev_12m FLOAT64,
+  pvp_latest           FLOAT64,
+  nav_per_share_latest FLOAT64,
+  discount_to_nav      FLOAT64,
   segment              STRING,
   mandate              STRING,
   updated_at           TIMESTAMP NOT NULL

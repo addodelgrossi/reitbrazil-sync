@@ -104,7 +104,7 @@ func (p *GitHubPublisher) uploadAsset(ctx context.Context, releaseID int64, path
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return err

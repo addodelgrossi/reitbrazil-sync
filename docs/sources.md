@@ -43,10 +43,13 @@ a handful of pre-Res175 FIIs remain there with `SIT = EM FUNCIONAMENTO
 NORMAL` — the modern universe (~720 B3-listed funds) lives in the
 informe mensal instead.
 
-## B3 COTAHIST (optional, v1.1)
+## B3 COTAHIST (official backfill source)
 
 Historical daily OHLCV from B3 in a fixed 245-byte record layout.
-Useful for backfill beyond what brapi exposes. Not required for v1.
+Useful for backfill beyond what brapi exposes. The parser lives under
+`internal/sources/b3` and emits canonical `model.PriceBar` rows; wiring
+it into a scheduled backfill command can be done without changing the
+SQLite consumer contract.
 
 ## Diagnostics: `reitbrazilctl coverage`
 

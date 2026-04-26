@@ -36,16 +36,18 @@ func newRunDailyCmd(app *App) *cobra.Command {
 		Short: "Fetch → land → transform → export → publish",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{
-				Brapi: &brapi.Client{}, BQ: &bq.Client{}, GCS: &publish.GCSPublisher{},
-				CVM: cvm.NewDownloader(cvm.DownloaderOptions{}),
-			})
+			want := pipeline.Deps{Brapi: &brapi.Client{}, CVM: cvm.NewDownloader(cvm.DownloaderOptions{})}
+			if !app.gf.dryRun {
+				want.BQ = &bq.Client{}
+				want.GCS = &publish.GCSPublisher{}
+			}
+			d, cleanup, err := app.buildDeps(ctx, want)
 			if err != nil {
 				return err
 			}
 			defer cleanup()
 
-			opts := pipeline.DailyOptions{OutDir: outDir}
+			opts := pipeline.DailyOptions{OutDir: outDir, DryRun: app.gf.dryRun}
 			if tickersRaw != "" {
 				for _, p := range parseTickerList(tickersRaw) {
 					t, err := parseTickerModel(p)
@@ -77,7 +79,7 @@ func newRunDailyCmd(app *App) *cobra.Command {
 			if runErr != nil {
 				return runErr
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "daily run ok: fund_count=%d published_to=%s\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "daily run ok: fund_count=%d published_to=%s\n",
 				report.FundCount, report.PublishedTo)
 			return nil
 		},
@@ -91,20 +93,22 @@ func newRunDailyCmd(app *App) *cobra.Command {
 
 func newRunMonthlyCmd(app *App) *cobra.Command {
 	var (
-		monthStr  string
-		outDir    string
+		monthStr   string
+		outDir     string
 		releaseTag string
-		body      string
+		body       string
 	)
 	cmd := &cobra.Command{
 		Use:   "monthly",
 		Short: "Daily pipeline + CVM ingest + GitHub release",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{
-				Brapi: &brapi.Client{}, BQ: &bq.Client{}, GCS: &publish.GCSPublisher{},
-				CVM: cvm.NewDownloader(cvm.DownloaderOptions{}),
-			})
+			want := pipeline.Deps{Brapi: &brapi.Client{}, CVM: cvm.NewDownloader(cvm.DownloaderOptions{})}
+			if !app.gf.dryRun {
+				want.BQ = &bq.Client{}
+				want.GCS = &publish.GCSPublisher{}
+			}
+			d, cleanup, err := app.buildDeps(ctx, want)
 			if err != nil {
 				return err
 			}
@@ -120,7 +124,7 @@ func newRunMonthlyCmd(app *App) *cobra.Command {
 			}
 
 			opts := pipeline.MonthlyOptions{
-				DailyOptions: pipeline.DailyOptions{OutDir: outDir},
+				DailyOptions: pipeline.DailyOptions{OutDir: outDir, DryRun: app.gf.dryRun},
 				Month:        month,
 			}
 			report, runErr := pipeline.RunMonthly(ctx, d, opts)

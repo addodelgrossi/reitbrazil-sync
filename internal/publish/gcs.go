@@ -2,7 +2,7 @@ package publish
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,12 +17,12 @@ import (
 
 // GCSOptions configures GCSPublisher.
 type GCSOptions struct {
-	Bucket         string
-	KeyLatest      string // e.g. latest/reitbrazil.db
-	KeyMetadata    string // e.g. latest/metadata.json
-	HistoryPrefix  string // e.g. history
-	RunsPrefix     string // e.g. runs
-	Logger         *slog.Logger
+	Bucket        string
+	KeyLatest     string // e.g. latest/reitbrazil.db
+	KeyMetadata   string // e.g. latest/metadata.json
+	HistoryPrefix string // e.g. history
+	RunsPrefix    string // e.g. runs
+	Logger        *slog.Logger
 }
 
 // GCSPublisher uploads artifacts to GCS.
@@ -80,10 +80,9 @@ func (p *GCSPublisher) Close() error { return p.client.Close() }
 // copy under <historyPrefix>/reitbrazil-YYYY-MM-DD.db. Also uploads the
 // metadata sidecar.
 func (p *GCSPublisher) PublishSQLite(ctx context.Context, dbPath string, meta Metadata) error {
-	// Compute MD5 for the metadata sidecar (and to verify upload later).
-	sum, err := fileMD5(dbPath)
+	sum, err := fileSHA256(dbPath)
 	if err != nil {
-		return fmt.Errorf("md5: %w", err)
+		return fmt.Errorf("sha256: %w", err)
 	}
 
 	// latest/reitbrazil.db
@@ -112,7 +111,7 @@ func (p *GCSPublisher) PublishSQLite(ctx context.Context, dbPath string, meta Me
 		"latest", p.keyLatest,
 		"history", historyKey,
 		"metadata", p.keyMetadata,
-		"md5", sum,
+		"sha256", sum,
 		"fund_count", meta.FundCount,
 	)
 	return nil
@@ -132,11 +131,11 @@ func (p *GCSPublisher) uploadFile(ctx context.Context, key, localPath, contentTy
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	w := p.client.Bucket(p.bucket).Object(key).NewWriter(ctx)
 	w.ContentType = contentType
 	if _, err := io.Copy(w, f); err != nil {
-		w.Close()
+		_ = w.Close()
 		return err
 	}
 	return w.Close()
@@ -146,19 +145,19 @@ func (p *GCSPublisher) uploadBytes(ctx context.Context, key string, body []byte,
 	w := p.client.Bucket(p.bucket).Object(key).NewWriter(ctx)
 	w.ContentType = contentType
 	if _, err := w.Write(body); err != nil {
-		w.Close()
+		_ = w.Close()
 		return err
 	}
 	return w.Close()
 }
 
-func fileMD5(path string) (string, error) {
+func fileSHA256(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	h := md5.New()
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}

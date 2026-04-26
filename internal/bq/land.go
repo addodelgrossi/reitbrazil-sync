@@ -15,9 +15,9 @@ import (
 
 // LandStats summarises one land operation.
 type LandStats struct {
-	Table          string
-	RowsInserted   int
-	Errors         []error
+	Table        string
+	RowsInserted int
+	Errors       []error
 }
 
 // joinErrors merges LandStats.Errors into a single error via errors.Join.
@@ -57,15 +57,20 @@ func (c *Client) LandFunds(ctx context.Context, src iter.Seq2[model.Fund, error]
 			}{string(f.Ticker), f.Name})
 		}
 		row := &bigquery.StructSaver{
-			Schema: RawSchemas()[TableBrapiFundList],
+			Schema:   RawSchemas()[TableBrapiFundList],
 			InsertID: fmt.Sprintf("%s-%d", f.Ticker, ingestedOrNow(f.IngestedAt).UnixNano()),
 			Struct: rawFundRow{
-				Ticker:     string(f.Ticker),
-				LongName:   f.Name,
-				Segment:    f.Segment,
-				Mandate:    f.Mandate,
-				Payload:    string(payload),
-				IngestedAt: ingestedOrNow(f.IngestedAt),
+				Ticker:        string(f.Ticker),
+				CNPJ:          f.CNPJ,
+				ISIN:          f.ISIN,
+				LongName:      f.Name,
+				Segment:       f.Segment,
+				Mandate:       f.Mandate,
+				Manager:       f.Manager,
+				Administrator: f.Administrator,
+				Listed:        &f.Listed,
+				Payload:       string(payload),
+				IngestedAt:    ingestedOrNow(f.IngestedAt),
 			},
 		}
 		batch = append(batch, row)
@@ -169,10 +174,12 @@ func (c *Client) LandDividends(ctx context.Context, src iter.Seq2[model.Dividend
 		if len(payload) == 0 {
 			payload = []byte(`{}`)
 		}
+		eventID := distributionEventID(d)
 		row := &bigquery.StructSaver{
 			Schema:   RawSchemas()[TableBrapiDividends],
-			InsertID: fmt.Sprintf("%s-%s-%s-%d", d.Ticker, d.ExDate.Format("2006-01-02"), string(d.Kind), ingestedOrNow(d.IngestedAt).UnixNano()),
+			InsertID: fmt.Sprintf("%s-%d", eventID, ingestedOrNow(d.IngestedAt).UnixNano()),
 			Struct: rawDividendRow{
+				EventID:      eventID,
 				Ticker:       string(d.Ticker),
 				ExDate:       civilDate(d.ExDate),
 				AnnounceDate: nullableCivilDate(d.AnnounceDate),
@@ -266,16 +273,28 @@ func (c *Client) LandCVMInforme(ctx context.Context, src iter.Seq2[model.CVMInfo
 			Schema:   RawSchemas()[TableCVMInformeMensal],
 			InsertID: fmt.Sprintf("%s-%s-%d", rec.CNPJ, rec.ReferenceMonth.Format("2006-01-02"), ingestedOrNow(rec.IngestedAt).UnixNano()),
 			Struct: rawCVMInformeRow{
-				CNPJ:             rec.CNPJ,
-				Ticker:           string(rec.Ticker),
-				ReferenceMonth:   civilDate(rec.ReferenceMonth),
-				NumInvestors:     rec.NumInvestors,
-				EquityTotal:      rec.EquityTotal,
-				NAVPerShare:      rec.NAVPerShare,
-				VacancyPhysical:  rec.VacancyPhysical,
-				VacancyFinancial: rec.VacancyFinancial,
-				Payload:          string(payload),
-				IngestedAt:       ingestedOrNow(rec.IngestedAt),
+				CNPJ:                rec.CNPJ,
+				Ticker:              string(rec.Ticker),
+				ReferenceMonth:      civilDate(rec.ReferenceMonth),
+				Name:                rec.Name,
+				ISIN:                rec.ISIN,
+				Segment:             rec.Segment,
+				Mandate:             rec.Mandate,
+				Administrator:       rec.Administrator,
+				Listed:              rec.Listed,
+				NumInvestors:        rec.NumInvestors,
+				AssetsTotal:         rec.AssetsTotal,
+				EquityTotal:         rec.EquityTotal,
+				SharesOutstanding:   rec.SharesOutstanding,
+				NAVPerShare:         rec.NAVPerShare,
+				DividendYieldMonth:  rec.DividendYieldMonth,
+				AmortizationMonth:   rec.AmortizationMonth,
+				VacancyPhysical:     rec.VacancyPhysical,
+				VacancyFinancial:    rec.VacancyFinancial,
+				RealEstateTotal:     rec.RealEstateTotal,
+				FinancialAssetTotal: rec.FinancialAssetTotal,
+				Payload:             string(payload),
+				IngestedAt:          ingestedOrNow(rec.IngestedAt),
 			},
 		}
 		batch = append(batch, row)
@@ -296,4 +315,22 @@ func ingestedOrNow(t time.Time) time.Time {
 		return time.Now().UTC()
 	}
 	return t
+}
+
+func distributionEventID(d model.Distribution) string {
+	payment := ""
+	if d.PaymentDate != nil {
+		payment = d.PaymentDate.UTC().Format("2006-01-02")
+	}
+	source := d.Source
+	if source == "" {
+		source = "unknown"
+	}
+	return fmt.Sprintf("%s:%s:%s:%s:%.12g",
+		d.Ticker,
+		d.ExDate.UTC().Format("2006-01-02"),
+		payment,
+		d.Kind,
+		d.AmountPerShare,
+	) + ":" + source
 }

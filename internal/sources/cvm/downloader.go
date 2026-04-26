@@ -65,7 +65,7 @@ func (d *Downloader) FetchYear(ctx context.Context, year int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 400))
 		return nil, fmt.Errorf("cvm %s: %d %s", url, resp.StatusCode, string(body))

@@ -24,7 +24,7 @@ func Open(path string, truncate bool) (*sql.DB, error) {
 		}
 	}
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, fmt.Errorf("mkdir: %w", err)
 		}
 	}
@@ -248,7 +248,7 @@ func (w *Writer) WriteDataSources(ctx context.Context, sources []DataSource) err
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, ds := range sources {
 		if _, err := tx.ExecContext(ctx, stmt,
@@ -281,10 +281,10 @@ func writeSeq[T any](
 	bump func(int),
 ) error {
 	var (
-		tx        *sql.Tx
-		pstmt     *sql.Stmt
-		inTx      int
-		flushErr  error
+		tx       *sql.Tx
+		pstmt    *sql.Stmt
+		inTx     int
+		flushErr error
 	)
 
 	openTx := func() error {
@@ -297,7 +297,7 @@ func writeSeq[T any](
 		}
 		p, err := t.PrepareContext(ctx, stmt)
 		if err != nil {
-			t.Rollback()
+			_ = t.Rollback()
 			return fmt.Errorf("prepare: %w", err)
 		}
 		tx, pstmt = t, p
@@ -308,7 +308,12 @@ func writeSeq[T any](
 		if tx == nil {
 			return nil
 		}
-		pstmt.Close()
+		if err := pstmt.Close(); err != nil {
+			_ = tx.Rollback()
+			tx, pstmt = nil, nil
+			inTx = 0
+			return err
+		}
 		err := tx.Commit()
 		if err == nil {
 			bump(inTx)
@@ -342,8 +347,8 @@ func writeSeq[T any](
 
 	if flushErr != nil {
 		if tx != nil {
-			pstmt.Close()
-			tx.Rollback()
+			_ = pstmt.Close()
+			_ = tx.Rollback()
 		}
 		return flushErr
 	}

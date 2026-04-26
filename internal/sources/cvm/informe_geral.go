@@ -57,10 +57,13 @@ func ParseInformeGeral(ctx context.Context, zipBytes []byte) iter.Seq2[InformeGe
 				return
 			}
 			if !parseInformeGeralCSV(ctx, rc, yield) {
-				rc.Close()
+				_ = rc.Close()
 				return
 			}
-			rc.Close()
+			if err := rc.Close(); err != nil {
+				yield(InformeGeralRow{}, fmt.Errorf("close %s: %w", f.Name, err))
+				return
+			}
 		}
 	}
 }
@@ -117,13 +120,13 @@ func parseInformeGeralCSV(ctx context.Context, r io.Reader, yield func(InformeGe
 }
 
 type informeGeralCols struct {
-	cnpj          int
-	reference     int
-	name          int
-	isin          int
-	mandate       int
-	segment       int
-	listedBolsa   int
+	cnpj        int
+	reference   int
+	name        int
+	isin        int
+	mandate     int
+	segment     int
+	listedBolsa int
 }
 
 func indexInformeGeralColumns(header []string) informeGeralCols {

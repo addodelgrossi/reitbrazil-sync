@@ -45,7 +45,7 @@ func TestOpen_AppliesMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	tables := map[string]bool{}
 	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table'`)
@@ -59,7 +59,7 @@ func TestOpen_AppliesMigrations(t *testing.T) {
 		}
 		tables[n] = true
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	for _, required := range []string{
 		"funds", "prices", "dividends", "fundamentals",
@@ -82,7 +82,7 @@ func TestOpen_AppliesMigrations(t *testing.T) {
 		}
 		views[n] = true
 	}
-	r2.Close()
+	_ = r2.Close()
 	for _, req := range []string{"v_latest_prices", "v_upcoming_dividends"} {
 		if !views[req] {
 			t.Fatalf("missing view: %s", req)
@@ -97,7 +97,7 @@ func TestWriter_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w := export.NewWriter(db, export.WriterOptions{BatchSize: 2})
 	ctx := t.Context()
@@ -178,16 +178,16 @@ func TestWriter_RoundTrip(t *testing.T) {
 	var fv []fundView
 	for rows.Next() {
 		var (
-			ticker, name string
+			ticker, name                     string
 			cnpj, seg, mand, mgr, admin, ipo *string
-			listed int
+			listed                           int
 		)
 		if err := rows.Scan(&ticker, &cnpj, &name, &seg, &mand, &mgr, &admin, &ipo, &listed); err != nil {
 			t.Fatal(err)
 		}
 		fv = append(fv, fundView{ticker: ticker, name: name})
 	}
-	rows.Close()
+	_ = rows.Close()
 	if len(fv) != 3 || fv[0].ticker != "HGLG11" {
 		t.Fatalf("funds list: %+v", fv)
 	}
@@ -197,9 +197,9 @@ func TestWriter_RoundTrip(t *testing.T) {
 		`SELECT ticker, trade_date, open, high, low, close, volume FROM prices
 		  WHERE ticker = ? ORDER BY trade_date DESC LIMIT 1`, "XPLG11")
 	var (
-		tk, td string
+		tk, td         string
 		op, hi, lo, cl *float64
-		vol *int64
+		vol            *int64
 	)
 	if err := row.Scan(&tk, &td, &op, &hi, &lo, &cl, &vol); err != nil {
 		t.Fatalf("latest price: %v", err)
@@ -222,7 +222,7 @@ func TestWriter_RoundTrip(t *testing.T) {
 		}
 		found++
 	}
-	r3.Close()
+	_ = r3.Close()
 	if found != 1 {
 		t.Fatalf("v_latest_prices returned %d rows", found)
 	}
@@ -237,17 +237,17 @@ func TestWriter_RoundTrip(t *testing.T) {
 	count := 0
 	for r4.Next() {
 		var (
-			ticker string
+			ticker                                  string
 			announce, record, payment, kind, source *string
-			exDate string
-			amount float64
+			exDate                                  string
+			amount                                  float64
 		)
 		if err := r4.Scan(&ticker, &announce, &exDate, &record, &payment, &amount, &kind, &source); err != nil {
 			t.Fatal(err)
 		}
 		count++
 	}
-	r4.Close()
+	_ = r4.Close()
 	if count != 3 {
 		t.Fatalf("dividends history: %d", count)
 	}
@@ -263,7 +263,7 @@ func TestWriter_RoundTrip(t *testing.T) {
 	if r5.Next() {
 		_ = r5.Scan(&upcoming)
 	}
-	r5.Close()
+	_ = r5.Close()
 	if upcoming < 0 {
 		t.Fatal("negative count")
 	}
@@ -274,9 +274,9 @@ func TestWriter_RoundTrip(t *testing.T) {
 		        liquidity_90d, vacancy_physical, vacancy_financial, occupancy_rate
 		   FROM fundamentals WHERE ticker = ? ORDER BY as_of DESC LIMIT 1`, "XPLG11")
 	var (
-		fticker, asof string
+		fticker, asof                              string
 		nav, pvp, assets, equity, liq, vp, vf, occ *float64
-		numInv *int64
+		numInv                                     *int64
 	)
 	if err := row.Scan(&fticker, &asof, &nav, &pvp, &assets, &equity, &numInv, &liq, &vp, &vf, &occ); err != nil {
 		t.Fatalf("latest fundamentals: %v", err)
@@ -297,8 +297,8 @@ func TestWriter_RoundTrip(t *testing.T) {
 	snapCount := 0
 	for r6.Next() {
 		var (
-			tk, ua string
-			lcd, seg, mand *string
+			tk, ua                        string
+			lcd, seg, mand                *string
 			lc, dy, dyF, adv, v90, dd, pv *float64
 		)
 		if err := r6.Scan(&tk, &lc, &lcd, &dy, &dyF, &adv, &v90, &dd, &pv, &seg, &mand, &ua); err != nil {
@@ -306,7 +306,7 @@ func TestWriter_RoundTrip(t *testing.T) {
 		}
 		snapCount++
 	}
-	r6.Close()
+	_ = r6.Close()
 	if snapCount != 1 {
 		t.Fatalf("snapshot screen: %d", snapCount)
 	}

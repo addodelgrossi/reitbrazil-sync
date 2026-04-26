@@ -6,6 +6,7 @@ import "time"
 type Fund struct {
 	Ticker        Ticker
 	CNPJ          string
+	ISIN          string
 	Name          string
 	Segment       string
 	Mandate       string

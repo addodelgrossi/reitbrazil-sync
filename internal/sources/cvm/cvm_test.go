@@ -13,9 +13,17 @@ import (
 	"github.com/addodelgrossi/reitbrazil-sync/internal/sources/cvm"
 )
 
-const sampleCSV = "CNPJ_Fundo;Data_Referencia;Codigo_B3;Numero_Cotistas;Patrimonio_Liquido;Valor_Patrimonial_Cotas;Percentual_Imoveis_Ocupados_Fisicamente;Percentual_Imoveis_Ocupados_Financeiramente\n" +
-	"11.728.688/0001-47;2026-02-28;XPLG11;120000;5000000000,00;98,50;0,97;0,95\n" +
-	"97.521.225/0001-25;2026-02-28;HGLG11;180000;8200000000,00;152,30;0,99;0,99\n"
+const sampleGeralCSV = "Tipo_Fundo_Classe;CNPJ_Fundo_Classe;Data_Referencia;Nome_Fundo_Classe;Codigo_ISIN;Mandato;Segmento_Atuacao;Mercado_Negociacao_Bolsa;Nome_Administrador\n" +
+	"Classe;11.728.688/0001-47;2026-02-28;PATRIA LOG FII;BRXPLGCTF005;Renda;Logística;S;Administrador X\n" +
+	"Classe;97.521.225/0001-25;2026-02-28;CSHG LOG FII;BRHGLGCTF004;Renda;Logística;S;Administrador H\n"
+
+const sampleComplementoCSV = "CNPJ_Fundo_Classe;Data_Referencia;Total_Numero_Cotistas;Valor_Ativo;Patrimonio_Liquido;Cotas_Emitidas;Valor_Patrimonial_Cotas;Percentual_Dividend_Yield_Mes;Percentual_Amortizacao_Cotas_Mes\n" +
+	"11.728.688/0001-47;2026-02-28;120000;5100000000,00;5000000000,00;50761421;98,50;0,76;0,00\n" +
+	"97.521.225/0001-25;2026-02-28;180000;8300000000,00;8200000000,00;53841000;152,30;0,69;0,00\n"
+
+const sampleAtivoPassivoCSV = "CNPJ_Fundo_Classe;Data_Referencia;Total_Investido;Direitos_Bens_Imoveis\n" +
+	"11.728.688/0001-47;2026-02-28;4900000000,00;4500000000,00\n" +
+	"97.521.225/0001-25;2026-02-28;8000000000,00;7600000000,00\n"
 
 func buildZip(t *testing.T, files map[string]string) []byte {
 	t.Helper()
@@ -38,9 +46,10 @@ func buildZip(t *testing.T, files map[string]string) []byte {
 
 func TestParse_YieldsRowsFromGeralCSV(t *testing.T) {
 	zipBytes := buildZip(t, map[string]string{
-		"inf_mensal_fii_geral_2026.csv":          sampleCSV,
-		"inf_mensal_fii_ativo_passivo_2026.csv":  "should;be;ignored",
-		"README.txt":                             "also ignored",
+		"inf_mensal_fii_geral_2026.csv":         sampleGeralCSV,
+		"inf_mensal_fii_complemento_2026.csv":   sampleComplementoCSV,
+		"inf_mensal_fii_ativo_passivo_2026.csv": sampleAtivoPassivoCSV,
+		"README.txt":                            "also ignored",
 	})
 
 	var rows []model.CVMInformeMensal
@@ -64,14 +73,17 @@ func TestParse_YieldsRowsFromGeralCSV(t *testing.T) {
 	if rows[0].Ticker != "XPLG11" {
 		t.Fatalf("ticker: %q", rows[0].Ticker)
 	}
-	if rows[0].NumInvestors != 120000 {
-		t.Fatalf("investors: %d", rows[0].NumInvestors)
+	if rows[0].NumInvestors == nil || *rows[0].NumInvestors != 120000 {
+		t.Fatalf("investors: %v", rows[0].NumInvestors)
 	}
-	if rows[0].EquityTotal != 5_000_000_000 {
+	if rows[0].EquityTotal == nil || *rows[0].EquityTotal != 5_000_000_000 {
 		t.Fatalf("equity: %v", rows[0].EquityTotal)
 	}
-	if rows[0].NAVPerShare != 98.50 {
+	if rows[0].NAVPerShare == nil || *rows[0].NAVPerShare != 98.50 {
 		t.Fatalf("nav: %v", rows[0].NAVPerShare)
+	}
+	if rows[0].VacancyPhysical != nil {
+		t.Fatalf("monthly parser should not invent vacancy: %v", rows[0].VacancyPhysical)
 	}
 	if rows[1].Ticker != "HGLG11" {
 		t.Fatalf("second ticker: %q", rows[1].Ticker)
@@ -80,12 +92,14 @@ func TestParse_YieldsRowsFromGeralCSV(t *testing.T) {
 
 func TestParseCSV_Latin1(t *testing.T) {
 	// Build a Latin-1 CSV (é = 0xE9) to exercise the transcoder.
-	header := []byte("CNPJ_Fundo;Data_Referencia;Codigo_B3;Numero_Cotistas;Patrimonio_L\xEDquido;Valor_Patrimonial_Cotas;Percentual_Im\xF3veis_Ocupados_Fisicamente;Percentual_Im\xF3veis_Ocupados_Financeiramente\n")
-	row := []byte("11.728.688/0001-47;2026-01-31;XPLG11;100000;4800000000,00;97,00;0,98;0,98\n")
-	body := append(header, row...)
+	header := []byte("CNPJ_Fundo_Classe;Data_Referencia;Total_Numero_Cotistas;Patrimonio_L\xEDquido;Valor_Patrimonial_Cotas\n")
+	row := []byte("11.728.688/0001-47;2026-01-31;100000;4800000000,00;97,00\n")
+	body := make([]byte, 0, len(header)+len(row))
+	body = append(body, header...)
+	body = append(body, row...)
 
 	// Quick sanity: it should not be valid UTF-8 before transcoding.
-	if !bytes.ContainsAny(body, "\xE9\xF3") {
+	if !bytes.ContainsAny(body, "\xED") {
 		t.Fatal("test CSV missing Latin-1 bytes")
 	}
 
@@ -106,7 +120,7 @@ func TestParseCSV_Latin1(t *testing.T) {
 
 func TestDownloader_FetchYear(t *testing.T) {
 	zipBytes := buildZip(t, map[string]string{
-		"inf_mensal_fii_geral_2026.csv": sampleCSV,
+		"inf_mensal_fii_geral_2026.csv": sampleGeralCSV,
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "inf_mensal_fii_2026.zip") {

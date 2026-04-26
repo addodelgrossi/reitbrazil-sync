@@ -122,6 +122,6 @@ func parseTickerList(raw string) []string {
 // to keep error-handling consistent without duplicating help text.
 func usageErr(cmd *cobra.Command, err error) error {
 	_ = cmd.Usage()
-	fmt.Fprintln(os.Stderr)
+	_, _ = fmt.Fprintln(os.Stderr)
 	return err
 }

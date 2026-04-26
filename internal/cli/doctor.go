@@ -9,8 +9,8 @@ import (
 
 	"github.com/addodelgrossi/reitbrazil-sync/internal/bq"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/export"
-	"github.com/addodelgrossi/reitbrazil-sync/internal/sources/brapi"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/pipeline"
+	"github.com/addodelgrossi/reitbrazil-sync/internal/sources/brapi"
 
 	_ "modernc.org/sqlite"
 )
@@ -35,7 +35,7 @@ func newDoctorCmd(app *App) *cobra.Command {
 				if err := check.fn(); err != nil {
 					issues = append(issues, fmt.Sprintf("%s: %v", check.name, err))
 				} else {
-					fmt.Fprintf(cmd.OutOrStdout(), "ok  %s\n", check.name)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ok  %s\n", check.name)
 				}
 			}
 
@@ -44,7 +44,7 @@ func newDoctorCmd(app *App) *cobra.Command {
 				if err := pingBrapi(ctx, app.cfg.BrapiToken); err != nil {
 					issues = append(issues, fmt.Sprintf("brapi.ping: %v", err))
 				} else {
-					fmt.Fprintln(cmd.OutOrStdout(), "ok  brapi.ping")
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ok  brapi.ping")
 				}
 			}
 
@@ -53,7 +53,7 @@ func newDoctorCmd(app *App) *cobra.Command {
 				if err := pingBQ(ctx, app); err != nil {
 					issues = append(issues, fmt.Sprintf("bq.ping: %v", err))
 				} else {
-					fmt.Fprintln(cmd.OutOrStdout(), "ok  bq.ping")
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ok  bq.ping")
 				}
 			}
 
@@ -61,16 +61,16 @@ func newDoctorCmd(app *App) *cobra.Command {
 			if err := smokeSQLite(); err != nil {
 				issues = append(issues, fmt.Sprintf("sqlite.migrations: %v", err))
 			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "ok  sqlite.migrations")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ok  sqlite.migrations")
 			}
 
 			if len(issues) > 0 {
 				for _, i := range issues {
-					fmt.Fprintf(cmd.ErrOrStderr(), "FAIL %s\n", i)
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "FAIL %s\n", i)
 				}
 				return fmt.Errorf("doctor found %d issue(s)", len(issues))
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "all checks passed")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "all checks passed")
 			return nil
 		},
 	}
@@ -113,6 +113,6 @@ func smokeSQLite() error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	return export.ApplyMigrations(db)
 }

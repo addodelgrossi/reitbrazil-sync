@@ -45,7 +45,7 @@ func newPublishGCSCmd(app *App) *cobra.Command {
 			if err := d.GCS.PublishSQLite(ctx, input, meta); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(),
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 				"published gs://%s/%s\n", app.cfg.GCSBucket, app.cfg.GCSKeyLatest)
 			return nil
 		},

@@ -26,22 +26,22 @@ func newDiscoverCmd(app *App) *cobra.Command {
 			}
 			defer cleanup()
 
-			tickers, stats, err := pipeline.BuildFIIUniverse(ctx, d, 0)
+			funds, stats, err := pipeline.BuildFIIUniverse(ctx, d, 0)
 			if err != nil {
 				return err
 			}
 
-			fmt.Fprintf(cmd.ErrOrStderr(),
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 				"universe: %d FIIs (brapi %d ∩ CVM %d B3-listed; dropped %d brapi tickers as non-FII)\n",
 				stats.Intersection, stats.BrapiCount, stats.CVMB3WithTicker, stats.BrapiDropped)
 
 			if dryRun {
-				for _, t := range tickers {
-					fmt.Fprintln(cmd.OutOrStdout(), t)
+				for _, f := range funds {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), f.Ticker)
 				}
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "discovered %d FIIs\n", len(tickers))
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "discovered %d FIIs\n", len(funds))
 			return nil
 		},
 	}

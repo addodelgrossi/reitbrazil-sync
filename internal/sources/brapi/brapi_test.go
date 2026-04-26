@@ -197,13 +197,13 @@ func TestFetchFundamentals_PopulatesBookValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.NAVPerShare != 98.5 {
+	if f.NAVPerShare == nil || *f.NAVPerShare != 98.5 {
 		t.Fatalf("nav: %v", f.NAVPerShare)
 	}
-	if f.PVP != 1.04 {
+	if f.PVP == nil || *f.PVP != 1.04 {
 		t.Fatalf("pvp: %v", f.PVP)
 	}
-	if f.AssetsTotal != 5_000_000_000 {
+	if f.AssetsTotal == nil || *f.AssetsTotal != 5_000_000_000 {
 		t.Fatalf("assets: %v", f.AssetsTotal)
 	}
 }

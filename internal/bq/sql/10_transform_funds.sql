@@ -11,10 +11,15 @@ USING (
     FROM (
       SELECT
         ticker,
+        cnpj,
+        isin,
         long_name,
         short_name,
         segment,
         mandate,
+        manager,
+        administrator,
+        listed,
         ingested_at,
         ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY ingested_at DESC) AS rn
       FROM `${project}.${dataset_raw}.brapi_fund_list`
@@ -22,21 +27,34 @@ USING (
     WHERE rn = 1
   ),
   cvm_latest AS (
-    SELECT ticker, ANY_VALUE(cnpj) AS cnpj
-    FROM `${project}.${dataset_raw}.cvm_informe_mensal`
-    WHERE ticker IS NOT NULL AND ticker != ''
-    GROUP BY ticker
+    SELECT *
+    FROM (
+      SELECT
+        ticker,
+        cnpj,
+        isin,
+        name,
+        segment,
+        mandate,
+        administrator,
+        listed,
+        ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY reference_month DESC, ingested_at DESC) AS rn
+      FROM `${project}.${dataset_raw}.cvm_informe_mensal`
+      WHERE ticker IS NOT NULL AND ticker != ''
+    )
+    WHERE rn = 1
   )
   SELECT
     b.ticker,
-    c.cnpj AS cnpj,
-    COALESCE(NULLIF(b.long_name, ''), b.short_name, b.ticker) AS name,
-    b.segment,
-    b.mandate,
-    CAST(NULL AS STRING) AS manager,
-    CAST(NULL AS STRING) AS administrator,
+    COALESCE(NULLIF(b.cnpj, ''), c.cnpj) AS cnpj,
+    COALESCE(NULLIF(b.isin, ''), c.isin) AS isin,
+    COALESCE(NULLIF(b.long_name, ''), NULLIF(b.short_name, ''), NULLIF(c.name, ''), b.ticker) AS name,
+    COALESCE(NULLIF(b.segment, ''), NULLIF(c.segment, '')) AS segment,
+    COALESCE(NULLIF(b.mandate, ''), NULLIF(c.mandate, '')) AS mandate,
+    NULLIF(b.manager, '') AS manager,
+    COALESCE(NULLIF(b.administrator, ''), NULLIF(c.administrator, '')) AS administrator,
     CAST(NULL AS DATE)   AS ipo_date,
-    TRUE                 AS listed
+    COALESCE(b.listed, c.listed, TRUE) AS listed
   FROM brapi_latest b
   LEFT JOIN cvm_latest c USING (ticker)
 ) S
@@ -46,6 +64,7 @@ WHEN MATCHED AND (
     COALESCE(T.segment, '')       != COALESCE(S.segment, '') OR
     COALESCE(T.mandate, '')       != COALESCE(S.mandate, '') OR
     COALESCE(T.cnpj, '')          != COALESCE(S.cnpj, '') OR
+    COALESCE(T.isin, '')          != COALESCE(S.isin, '') OR
     T.listed != S.listed
 )
 THEN UPDATE SET
@@ -53,12 +72,13 @@ THEN UPDATE SET
   segment       = S.segment,
   mandate       = S.mandate,
   cnpj          = COALESCE(S.cnpj, T.cnpj),
+  isin          = COALESCE(S.isin, T.isin),
   manager       = COALESCE(S.manager, T.manager),
   administrator = COALESCE(S.administrator, T.administrator),
   ipo_date      = COALESCE(S.ipo_date, T.ipo_date),
   listed        = S.listed
 WHEN NOT MATCHED THEN INSERT (
-  ticker, cnpj, name, segment, mandate, manager, administrator, ipo_date, listed
+  ticker, cnpj, isin, name, segment, mandate, manager, administrator, ipo_date, listed
 ) VALUES (
-  S.ticker, S.cnpj, S.name, S.segment, S.mandate, S.manager, S.administrator, S.ipo_date, S.listed
+  S.ticker, S.cnpj, S.isin, S.name, S.segment, S.mandate, S.manager, S.administrator, S.ipo_date, S.listed
 );

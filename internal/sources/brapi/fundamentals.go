@@ -35,14 +35,21 @@ func (c *Client) FetchFundamentals(ctx context.Context, ticker model.Ticker) (mo
 		IngestedAt: ingested,
 	}
 	if qd.DefaultKeyStatistics != nil {
-		f.NAVPerShare = qd.DefaultKeyStatistics.BookValue
-		f.PVP = qd.DefaultKeyStatistics.PriceToBook
+		f.NAVPerShare = floatPtr(qd.DefaultKeyStatistics.BookValue)
+		f.PVP = floatPtr(qd.DefaultKeyStatistics.PriceToBook)
 	}
 	if qd.FinancialData != nil {
-		f.AssetsTotal = qd.FinancialData.TotalAssets
+		f.AssetsTotal = floatPtr(qd.FinancialData.TotalAssets)
 	}
 
 	payload, _ := json.Marshal(qd)
 	f.Payload = payload
 	return f, nil
+}
+
+func floatPtr(v float64) *float64 {
+	if v == 0 {
+		return nil
+	}
+	return &v
 }

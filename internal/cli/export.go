@@ -37,7 +37,7 @@ func newExportSQLiteCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			w := export.NewWriter(db, export.WriterOptions{Logger: app.log})
 			if err := pipelineExport(ctx, d, w); err != nil {
@@ -52,7 +52,7 @@ func newExportSQLiteCmd(app *App) *cobra.Command {
 			if err := w.Vacuum(ctx); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(),
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 				"wrote %s  funds=%d prices=%d dividends=%d fundamentals=%d snapshots=%d\n",
 				output, w.Counts.Funds, w.Counts.Prices, w.Counts.Dividends,
 				w.Counts.Fundamentals, w.Counts.Snapshots)
