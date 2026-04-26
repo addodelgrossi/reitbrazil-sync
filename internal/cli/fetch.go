@@ -33,9 +33,7 @@ func resolveTickers(cmd *cobra.Command, raw string, d pipeline.Deps) ([]model.Ti
 		if err != nil {
 			return nil, err
 		}
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-			"universe: %d FIIs (brapi %d ∩ CVM %d B3-listed; dropped %d brapi tickers as non-FII)\n",
-			stats.Intersection, stats.BrapiCount, stats.CVMB3WithTicker, stats.BrapiDropped)
+		writeUniverseSummary(cmd.ErrOrStderr(), stats)
 		tickers := make([]model.Ticker, 0, len(funds))
 		for _, f := range funds {
 			tickers = append(tickers, f.Ticker)

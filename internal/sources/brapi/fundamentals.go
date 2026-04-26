@@ -3,8 +3,11 @@ package brapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/addodelgrossi/reitbrazil-sync/internal/model"
@@ -19,7 +22,13 @@ func (c *Client) FetchFundamentals(ctx context.Context, ticker model.Ticker) (mo
 
 	var resp quoteDetailResponse
 	if err := c.getJSON(ctx, "/quote/"+string(ticker), q, &resp); err != nil {
-		return model.Fundamentals{}, fmt.Errorf("fundamentals %s: %w", ticker, err)
+		if !isModuleUnavailable(err, "financialData") {
+			return model.Fundamentals{}, fmt.Errorf("fundamentals %s: %w", ticker, err)
+		}
+		q.Set("modules", "defaultKeyStatistics")
+		if err := c.getJSON(ctx, "/quote/"+string(ticker), q, &resp); err != nil {
+			return model.Fundamentals{}, fmt.Errorf("fundamentals %s: %w", ticker, err)
+		}
 	}
 	if len(resp.Results) == 0 {
 		return model.Fundamentals{}, fmt.Errorf("fundamentals %s: empty results", ticker)
@@ -45,6 +54,14 @@ func (c *Client) FetchFundamentals(ctx context.Context, ticker model.Ticker) (mo
 	payload, _ := json.Marshal(qd)
 	f.Payload = payload
 	return f, nil
+}
+
+func isModuleUnavailable(err error, module string) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) &&
+		httpErr.Status == http.StatusBadRequest &&
+		strings.Contains(httpErr.Body, "MODULES_NOT_AVAILABLE") &&
+		strings.Contains(httpErr.Body, module)
 }
 
 func floatPtr(v float64) *float64 {

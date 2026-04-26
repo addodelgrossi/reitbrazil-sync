@@ -41,6 +41,27 @@ func TestBuildFIIUniverse_PreservesCVMMetadata(t *testing.T) {
 	}
 }
 
+func TestBuildFIIUniverse_FallsBackToCVMWhenBrapiListIsEmpty(t *testing.T) {
+	d := Deps{
+		Brapi: fakeBrapiSource{},
+		CVM:   fakeCVMDownloader{zip: buildCVMUniverseZip(t)},
+	}
+
+	funds, stats, err := BuildFIIUniverse(t.Context(), d, 2025)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stats.FallbackToCVM || stats.BrapiCount != 0 || stats.CVMB3WithTicker != 2 || stats.Intersection != 2 {
+		t.Fatalf("stats: %+v", stats)
+	}
+	if len(funds) != 2 {
+		t.Fatalf("funds: %+v", funds)
+	}
+	if funds[0].Ticker != "HGLG11" || funds[1].Ticker != "XPLG11" {
+		t.Fatalf("sorted CVM fallback funds: %+v", funds)
+	}
+}
+
 func TestRunDaily_DryRunDoesNotRequireBQOrPublisher(t *testing.T) {
 	d := Deps{
 		Brapi: fakeBrapiSource{

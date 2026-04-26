@@ -12,10 +12,11 @@ import (
 
 // UniverseStats summarises BuildFIIUniverse's output.
 type UniverseStats struct {
-	BrapiCount      int `json:"brapi_count"`
-	CVMB3WithTicker int `json:"cvm_b3_with_ticker"`
-	Intersection    int `json:"intersection"`
-	BrapiDropped    int `json:"brapi_dropped"`
+	BrapiCount      int  `json:"brapi_count"`
+	CVMB3WithTicker int  `json:"cvm_b3_with_ticker"`
+	Intersection    int  `json:"intersection"`
+	BrapiDropped    int  `json:"brapi_dropped"`
+	FallbackToCVM   bool `json:"fallback_to_cvm"`
 }
 
 // BuildFIIUniverse returns the canonical FII fund list: brapi's
@@ -83,6 +84,22 @@ func BuildFIIUniverse(ctx context.Context, d Deps, year int) ([]model.Fund, Univ
 		}
 	}
 
+	stats := UniverseStats{
+		BrapiCount:      len(brapiFunds),
+		CVMB3WithTicker: len(cvmFunds),
+	}
+
+	if len(brapiFunds) == 0 {
+		out := make([]model.Fund, 0, len(cvmFunds))
+		for _, c := range cvmFunds {
+			out = append(out, c.fund)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Ticker < out[j].Ticker })
+		stats.Intersection = len(out)
+		stats.FallbackToCVM = true
+		return out, stats, nil
+	}
+
 	out := make([]model.Fund, 0, len(brapiFunds))
 	for t, b := range brapiFunds {
 		c, ok := cvmFunds[t]
@@ -93,12 +110,8 @@ func BuildFIIUniverse(ctx context.Context, d Deps, year int) ([]model.Fund, Univ
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Ticker < out[j].Ticker })
 
-	stats := UniverseStats{
-		BrapiCount:      len(brapiFunds),
-		CVMB3WithTicker: len(cvmFunds),
-		Intersection:    len(out),
-		BrapiDropped:    len(brapiFunds) - len(out),
-	}
+	stats.Intersection = len(out)
+	stats.BrapiDropped = len(brapiFunds) - len(out)
 	return out, stats, nil
 }
 

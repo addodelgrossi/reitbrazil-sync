@@ -208,6 +208,36 @@ func TestFetchFundamentals_PopulatesBookValue(t *testing.T) {
 	}
 }
 
+func TestFetchFundamentals_RetriesWithoutUnavailableFinancialData(t *testing.T) {
+	var calls []string
+	srv := fixtureServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modules := r.URL.Query().Get("modules")
+		calls = append(calls, modules)
+		w.Header().Set("Content-Type", "application/json")
+		if modules == "defaultKeyStatistics,financialData" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":true,"message":"Os módulos a seguir não estão disponíveis no seu plano: financialData. Módulos permitidos: defaultKeyStatistics","code":"MODULES_NOT_AVAILABLE"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"results":[{"symbol":"XPLG11","defaultKeyStatistics":{"bookValue":98.5,"priceToBook":1.04}}]}`))
+	}))
+	c := newClient(t, srv.URL)
+
+	f, err := c.FetchFundamentals(t.Context(), "XPLG11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[0] != "defaultKeyStatistics,financialData" || calls[1] != "defaultKeyStatistics" {
+		t.Fatalf("module calls: %#v", calls)
+	}
+	if f.NAVPerShare == nil || *f.NAVPerShare != 98.5 {
+		t.Fatalf("nav: %v", f.NAVPerShare)
+	}
+	if f.AssetsTotal != nil {
+		t.Fatalf("assets should be nil without financialData: %v", f.AssetsTotal)
+	}
+}
+
 func TestRetry_On5xxThenSuccess(t *testing.T) {
 	body := mustReadFixture(t, "quote_history.json")
 	var call int

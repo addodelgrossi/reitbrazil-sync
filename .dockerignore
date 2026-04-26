@@ -9,6 +9,9 @@ docs/
 deploy/terraform/
 .env
 .env.local
+.secrets/
+*.credentials.json
+service-account*.json
 *.tfstate
 *.tfstate.*
 **/.terraform/

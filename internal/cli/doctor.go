@@ -9,6 +9,7 @@ import (
 
 	"github.com/addodelgrossi/reitbrazil-sync/internal/bq"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/export"
+	"github.com/addodelgrossi/reitbrazil-sync/internal/model"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/pipeline"
 	"github.com/addodelgrossi/reitbrazil-sync/internal/sources/brapi"
 
@@ -94,7 +95,13 @@ func pingBrapi(ctx context.Context, token string) error {
 		}
 	}
 	if count == 0 {
-		return fmt.Errorf("empty fund list (token may be invalid)")
+		ticker, err := model.ParseTicker("HGLG11")
+		if err != nil {
+			return err
+		}
+		if _, err := cli.FetchFundamentals(ctx, ticker); err != nil {
+			return fmt.Errorf("empty fund list and quote ping failed: %w", err)
+		}
 	}
 	return nil
 }

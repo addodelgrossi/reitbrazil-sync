@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -31,9 +32,7 @@ func newDiscoverCmd(app *App) *cobra.Command {
 				return err
 			}
 
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-				"universe: %d FIIs (brapi %d ∩ CVM %d B3-listed; dropped %d brapi tickers as non-FII)\n",
-				stats.Intersection, stats.BrapiCount, stats.CVMB3WithTicker, stats.BrapiDropped)
+			writeUniverseSummary(cmd.ErrOrStderr(), stats)
 
 			if dryRun {
 				for _, f := range funds {
@@ -47,4 +46,17 @@ func newDiscoverCmd(app *App) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print tickers instead of a summary")
 	return cmd
+}
+
+func writeUniverseSummary(w io.Writer, stats pipeline.UniverseStats) {
+	_, _ = fmt.Fprint(w, universeSummary(stats))
+}
+
+func universeSummary(stats pipeline.UniverseStats) string {
+	if stats.FallbackToCVM {
+		return fmt.Sprintf("universe: %d FIIs (CVM B3-listed fallback; brapi list returned %d; CVM %d with ticker)\n",
+			stats.Intersection, stats.BrapiCount, stats.CVMB3WithTicker)
+	}
+	return fmt.Sprintf("universe: %d FIIs (brapi %d ∩ CVM %d B3-listed; dropped %d brapi tickers as non-FII)\n",
+		stats.Intersection, stats.BrapiCount, stats.CVMB3WithTicker, stats.BrapiDropped)
 }
