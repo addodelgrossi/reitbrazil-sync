@@ -38,6 +38,7 @@ func newRunDailyCmd(app *App) *cobra.Command {
 			ctx := cmd.Context()
 			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{
 				Brapi: &brapi.Client{}, BQ: &bq.Client{}, GCS: &publish.GCSPublisher{},
+				CVM: cvm.NewDownloader(cvm.DownloaderOptions{}),
 			})
 			if err != nil {
 				return err

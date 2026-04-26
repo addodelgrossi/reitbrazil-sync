@@ -17,8 +17,11 @@ func newUTF8Reader(r io.Reader) io.Reader {
 		_, _ = br.Discard(3)
 		return br
 	}
-	// If the first 4KB parses as valid UTF-8, assume UTF-8.
-	if peek, err := br.Peek(4096); err == nil && utf8.Valid(peek) {
+	// If the first 4KB parses as valid UTF-8, assume UTF-8. Short reads
+	// (err == io.EOF) are fine — bufio returns the partial buffer, and a
+	// valid UTF-8 prefix is strong evidence the rest is UTF-8 too.
+	peek, _ := br.Peek(4096)
+	if utf8.Valid(peek) {
 		return br
 	}
 	return &latin1Reader{r: br}

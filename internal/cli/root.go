@@ -81,6 +81,7 @@ func NewApp(version string) *App {
 	// reach the shared config/logger after PersistentPreRunE ran.
 	root.AddCommand(newDoctorCmd(app))
 	root.AddCommand(newDiscoverCmd(app))
+	root.AddCommand(newCoverageCmd(app))
 	root.AddCommand(newFetchCmd(app))
 	root.AddCommand(newTransformCmd(app))
 	root.AddCommand(newExportCmd(app))

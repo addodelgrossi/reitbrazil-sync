@@ -29,15 +29,14 @@ func newFetchCmd(app *App) *cobra.Command {
 func resolveTickers(cmd *cobra.Command, raw string, d pipeline.Deps) ([]model.Ticker, error) {
 	parts := parseTickerList(raw)
 	if len(parts) == 0 {
-		// fall back to the discovery list
-		var out []model.Ticker
-		for f, err := range d.Brapi.FetchList(cmd.Context()) {
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, f.Ticker)
+		tickers, stats, err := pipeline.BuildFIIUniverse(cmd.Context(), d, 0)
+		if err != nil {
+			return nil, err
 		}
-		return out, nil
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"universe: %d FIIs (brapi %d ∩ CVM %d B3-listed; dropped %d brapi tickers as non-FII)\n",
+			stats.Intersection, stats.BrapiCount, stats.CVMB3WithTicker, stats.BrapiDropped)
+		return tickers, nil
 	}
 	tickers := make([]model.Ticker, 0, len(parts))
 	for _, p := range parts {
@@ -61,7 +60,7 @@ func newFetchPricesCmd(app *App) *cobra.Command {
 		Short: "Fetch OHLCV bars and land them in raw.brapi_quote",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{Brapi: &brapi.Client{}, BQ: &bq.Client{}})
+			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{Brapi: &brapi.Client{}, BQ: &bq.Client{}, CVM: &cvm.Downloader{}})
 			if err != nil {
 				return err
 			}
@@ -109,7 +108,7 @@ func newFetchDividendsCmd(app *App) *cobra.Command {
 		Short: "Fetch dividend events and land them in raw.brapi_dividends",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{Brapi: &brapi.Client{}, BQ: &bq.Client{}})
+			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{Brapi: &brapi.Client{}, BQ: &bq.Client{}, CVM: &cvm.Downloader{}})
 			if err != nil {
 				return err
 			}
@@ -143,7 +142,7 @@ func newFetchFundamentalsCmd(app *App) *cobra.Command {
 		Short: "Fetch fundamentals snapshots and land them in raw.brapi_fundamentals",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{Brapi: &brapi.Client{}, BQ: &bq.Client{}})
+			d, cleanup, err := app.buildDeps(ctx, pipeline.Deps{Brapi: &brapi.Client{}, BQ: &bq.Client{}, CVM: &cvm.Downloader{}})
 			if err != nil {
 				return err
 			}

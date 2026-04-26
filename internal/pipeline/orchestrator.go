@@ -189,26 +189,30 @@ func RunMonthly(ctx context.Context, d Deps, opts MonthlyOptions) (*RunReport, e
 func stageDiscover(ctx context.Context, d Deps, dryRun bool) (StageResult, []model.Ticker, error) {
 	start := time.Now()
 	stage := "discover"
-	var tickers []model.Ticker
 	var errs []string
-	count := 0
-	for f, err := range d.Brapi.FetchList(ctx) {
-		if err != nil {
-			errs = append(errs, err.Error())
-			break
-		}
-		tickers = append(tickers, f.Ticker)
-		count++
+
+	tickers, stats, err := BuildFIIUniverse(ctx, d, 0)
+	if err != nil {
+		errs = append(errs, err.Error())
+		return buildStage(stage, 0, start, errs), nil, err
 	}
+	if d.Log != nil {
+		d.Log.InfoContext(ctx, "universe resolved",
+			"brapi", stats.BrapiCount,
+			"cvm_b3_with_ticker", stats.CVMB3WithTicker,
+			"intersection", stats.Intersection,
+			"brapi_dropped_as_non_fii", stats.BrapiDropped)
+	}
+
 	if !dryRun && d.BQ != nil && len(tickers) > 0 {
 		// Re-land as a stream so the raw fund list keeps a fresh snapshot.
-		stats, err := d.BQ.LandFunds(ctx, fundsIterFor(tickers))
-		_ = stats
+		landStats, err := d.BQ.LandFunds(ctx, fundsIterFor(tickers))
+		_ = landStats
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
 	}
-	return buildStage(stage, count, start, errs), tickers, firstErr(errs)
+	return buildStage(stage, len(tickers), start, errs), tickers, firstErr(errs)
 }
 
 func stageLandPrices(ctx context.Context, d Deps, tickers []model.Ticker, from, to time.Time) StageResult {
